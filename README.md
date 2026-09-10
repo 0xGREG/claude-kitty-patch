@@ -42,33 +42,21 @@ Previous versions of this patch tried to modify the CSI-u parser JS code, but th
 python patch.py
 ```
 
-This finds the Claude binary at `~/.local/bin/claude`, creates a backup (`.bak`), and writes a `_patched` copy next to it.
-
-### Windows
-
-```powershell
-Get-Process -Name "claude*" | Stop-Process -Force
-copy "$env:USERPROFILE\.local\bin\claude_patched.exe" "$env:USERPROFILE\.local\bin\claude.exe"
-```
-
-### Linux / macOS
-
-```bash
-pkill -f claude || true
-cp ~/.local/bin/claude_patched ~/.local/bin/claude
-```
+This finds the Claude binary at `~/.local/bin/claude`, kills any running Claude processes, creates a backup (`.bak`), and patches the binary in place.
 
 ### Revert
 
-Restore the backup created by the patcher:
+Kill Claude processes first, then restore the backup:
 
 ```powershell
 # Windows
+Get-Process -Name "claude*" | Stop-Process -Force
 copy "$env:USERPROFILE\.local\bin\claude.exe.bak" "$env:USERPROFILE\.local\bin\claude.exe"
 ```
 
 ```bash
 # Linux / macOS
+pkill -f claude || true
 cp ~/.local/bin/claude.bak ~/.local/bin/claude
 ```
 

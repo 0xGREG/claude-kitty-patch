@@ -27,6 +27,7 @@ import os
 import sys
 import shutil
 import struct
+import subprocess
 from pathlib import Path
 
 # String constant in bytecode string table: NUL-terminated ">5u"
@@ -188,38 +189,41 @@ def patch(binary_path: Path) -> Path:
         print("\n  Nothing to patch -- binary may already be patched or is a different version.")
         return binary_path
 
-    # Save
+    # Back up original
     backup_path = binary_path.with_suffix(binary_path.suffix + ".bak")
     if not backup_path.exists():
-        print(f"\n  Backing up to {backup_path}")
+        print(f"\n  Backing up original to {backup_path}")
         shutil.copy2(binary_path, backup_path)
     else:
         print(f"\n  Backup already exists at {backup_path}")
 
-    output_path = binary_path.parent / (binary_path.stem + "_patched" + binary_path.suffix)
-    output_path.write_bytes(bytes(data))
-    print(f"  Patched binary written to {output_path}")
+    # Kill running Claude processes before overwriting
+    print("\n  Killing Claude processes ...")
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "claude.exe"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    else:
+        subprocess.run(
+            ["pkill", "-f", "claude"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
+    # Overwrite in place
+    binary_path.write_bytes(bytes(data))
+    print(f"  Patched {binary_path} in place")
     print(f"  Size: {len(data)} bytes (unchanged)")
     print()
-    print("To install:")
-    print(f"  1. Close Claude Code completely")
+    print("To revert:")
     if sys.platform == "win32":
-        print(f"  2. Kill any remaining claude processes:")
-        print(f'     Get-Process -Name "claude*" | Stop-Process -Force')
-        print(f'  3. copy "{output_path}" "{binary_path}"')
+        print(f'  1. Get-Process -Name "claude*" | Stop-Process -Force')
+        print(f'  2. copy "{backup_path}" "{binary_path}"')
     else:
-        print(f"  2. Kill any remaining claude processes:")
-        print(f'     pkill -f claude || true')
-        print(f'  3. cp "{output_path}" "{binary_path}"')
-    print(f"  4. Restart Claude Code")
-    print()
-    print(f"To revert:")
-    if sys.platform == "win32":
-        print(f'  copy "{backup_path}" "{binary_path}"')
-    else:
-        print(f'  cp "{backup_path}" "{binary_path}"')
+        print(f'  1. pkill -f claude || true')
+        print(f'  2. cp "{backup_path}" "{binary_path}"')
 
-    return output_path
+    return binary_path
 
 
 def main():
