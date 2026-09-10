@@ -32,7 +32,7 @@ The patch changes the kitty keyboard flags from `5` to `1` in the Bun bytecode s
 
 Two locations are patched:
 1. **Bytecode string constant** — the NUL-terminated `">5u"` → `">1u"` in the compiled string table
-2. **JS source text** — `_mr=Mf(">5u")` → `_mr=Mf(">1u")`
+2. **JS source text** — the `Xx(">5u")` assignment (variable/function names vary across versions; found dynamically via regex)
 
 Previous versions of this patch tried to modify the CSI-u parser JS code, but that didn't work because Bun standalone executables use bytecode compilation (`@bun @bytecode`), so text-level JS patches are inert.
 

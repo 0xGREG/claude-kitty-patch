@@ -36,9 +36,11 @@ from pathlib import Path
 BYTECODE_MARKER = b"\x00>5u\x00"
 BYTECODE_REPLACEMENT = b"\x00>1u\x00"
 
-# JS source text pattern
-SOURCE_OLD = b'_mr=Mf(">5u")'
-SOURCE_NEW = b'_mr=Mf(">1u")'
+# JS source text pattern: variable and function names change across versions
+# (e.g. _mr=Mf(">5u") in older builds, v_r=Uf(">5u") in newer ones).
+# We search dynamically with a regex instead of hardcoding.
+import re as _re
+SOURCE_PATTERN = _re.compile(rb'([a-zA-Z_$][a-zA-Z0-9_$]*=[a-zA-Z_$][a-zA-Z0-9_$]*\(")>5u("\))')
 
 
 def find_claude_binary():
@@ -139,16 +141,16 @@ def patch(binary_path: Path) -> Path:
     # --- Patch 1: Bytecode string constant ---
     # Find NUL-terminated ">5u" strings that are NOT inside JS source text.
     # The bytecode string table entry looks like: \x00>5u\x00 (NUL-bounded)
-    # The JS source text looks like: Mf(">5u")
+    # The JS source text looks like: Xx(">5u") where Xx varies across versions.
     bytecode_positions = []
     start = 0
     while True:
         idx = data.find(BYTECODE_MARKER, start)
         if idx < 0:
             break
-        # Check this is NOT inside JS source (preceded by Mf(" or similar)
+        # Check this is NOT inside JS source (preceded by a function call like Xx(")
         context_before = data[max(0, idx - 10) : idx].decode("ascii", errors="replace")
-        if 'Mf("' not in context_before:
+        if '("' not in context_before:
             bytecode_positions.append(idx)
         start = idx + 1
 
@@ -163,7 +165,7 @@ def patch(binary_path: Path) -> Path:
         already = data.find(b"\x00>1u\x00")
         if already >= 0:
             ctx = data[max(0, already - 10) : already].decode("ascii", errors="replace")
-            if 'Mf("' not in ctx:
+            if '("' not in ctx:
                 print(f"\n  Bytecode: already patched ('>1u' at 0x{already:x})")
             else:
                 print("\n  WARNING: Bytecode string '>5u' not found!")
@@ -171,17 +173,21 @@ def patch(binary_path: Path) -> Path:
             print("\n  WARNING: Bytecode string '>5u' not found!")
 
     # --- Patch 2: JS source text ---
-    source_idx = data.find(SOURCE_OLD)
+    source_match = SOURCE_PATTERN.search(data)
 
-    if source_idx >= 0:
+    if source_match:
+        old_bytes = source_match.group(0)
+        new_bytes = source_match.group(1) + b">1u" + source_match.group(2)
+        source_idx = source_match.start()
         print(f"\n  Source text patch:")
-        print(f"    Offset 0x{source_idx:x}: {SOURCE_OLD.decode()} -> {SOURCE_NEW.decode()}")
-        data[source_idx : source_idx + len(SOURCE_OLD)] = SOURCE_NEW
+        print(f"    Offset 0x{source_idx:x}: {old_bytes.decode()} -> {new_bytes.decode()}")
+        data[source_idx : source_idx + len(old_bytes)] = new_bytes
         patched_anything = True
     else:
-        already = data.find(SOURCE_NEW)
-        if already >= 0:
-            print(f"\n  Source text: already patched at 0x{already:x}")
+        already_pat = _re.compile(rb'[a-zA-Z_$][a-zA-Z0-9_$]*=[a-zA-Z_$][a-zA-Z0-9_$]*\(">1u"\)')
+        already_match = already_pat.search(data)
+        if already_match:
+            print(f"\n  Source text: already patched at 0x{already_match.start():x}")
         else:
             print("\n  WARNING: Source text pattern not found!")
 
